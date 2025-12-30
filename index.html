@@ -776,6 +776,7 @@
             <div class="hint-row">
               <button class="btn-purple" data-action="json-sample">示例</button>
               <button class="btn-teal" data-action="paste-json">粘贴</button>
+              <button class="btn-blue" data-action="copy-json-input">复制</button>
               <button class="danger" data-action="clear-json">清空</button>
             </div>
           </div>
@@ -821,6 +822,7 @@
             <div class="hint-row">
               <button class="btn-purple" data-action="xml-sample">示例</button>
               <button class="btn-teal" data-action="paste-xml">粘贴</button>
+              <button class="btn-orange" data-action="copy-xml-input">复制</button>
               <button class="danger" data-action="clear-xml">清空</button>
             </div>
           </div>
@@ -891,6 +893,7 @@
                   </optgroup>
               </select>
               <button class="btn-teal" data-action="paste-sql">粘贴</button>
+              <button class="btn-lime" data-action="copy-sql-input">复制</button>
               <button class="danger" data-action="clear-sql">清空</button>
             </div>
           </div>
@@ -3568,6 +3571,7 @@ ${jsonUnescapeLogic.toString()}
       'copy-json': () => copyText(els.json.output.dataset.raw),
       'clear-json': () => { els.json.input.value = ''; saveInput('json-input', ''); showToast('已清空', 'success'); },
       'paste-json': () => pasteToEl(els.json.input, 'json-input'),
+      'copy-json-input': () => copyText(els.json.input.value),
 
       'xml-format': () => process('xml', 'xml-format'),
       'xml-minify': () => process('xml', 'xml-minify'),
@@ -3600,6 +3604,7 @@ ${jsonUnescapeLogic.toString()}
         showToast('已清空结果');
       },
       'paste-xml': () => pasteToEl(els.xml.input, 'xml-input'),
+      'copy-xml-input': () => copyText(els.xml.input.value),
 
       'sql-format': () => process('sql', 'sql-format'),
       'sql-minify': () => process('sql', 'sql-minify'),
@@ -3614,6 +3619,7 @@ ${jsonUnescapeLogic.toString()}
       'clear-sql': () => { els.sql.input.value = ''; safeStorage.set('sql-input', ''); showToast('已清空'); },
       'clear-sql-output': () => { els.sql.output.innerHTML = ''; els.sql.output.dataset.raw = ''; showToast('已清空结果'); },
       'paste-sql': () => pasteToEl(els.sql.input, 'sql-input'),
+      'copy-sql-input': () => copyText(els.sql.input.value),
 
       'base64-sample': () => fillSample('base64'),
       'paste-base64-img': () => pasteTo('base64-img-input', 'base64-img-input'),
@@ -5793,7 +5799,7 @@ ${jsonUnescapeLogic.toString()}
         '{"appConfig":{"version":"2.5.0","isDebug":true,"server_url":"https://api.prod.example.com","maxRetries":5,"features":{"darkMode":true,"BetaFeature":false},"supported_regions":["US","EU","CN"]},"UserPreferences":{"theme":"Solarized Dark","notifications_enabled":true,"RecentFiles":["report_2024.pdf","data.csv"]}}',
         '{"status":"success","code":200,"data":{"userId":1024,"UserName":"AdminUser","email":"admin@example.com","is_verified":true,"lastLogin":null,"roles":[{"roleId":"R_01","RoleName":"Administrator","permissions":["read","write","delete"]},{"roleId":"R_02","RoleName":"Auditor","permissions":["read"]}],"meta_info":{"created_at":"2023-12-01T10:00:00Z","login_count":42}}}',
         '{"product_id":"PROD-9988","Name":"Ergonomic Chair","price_info":{"currency":"USD","amount":299.99,"discount":0.1},"in_stock":true,"specs":{"Material":"Mesh","ColorOptions":["Black","Grey","Blue"],"Dimensions":{"width":60,"height":110,"depth":60}},"reviews":[{"user":"Alice","rating":5,"comment":"Excellent support!"},{"user":"Bob","rating":4,"comment":"Good value."}]}',
-        '{"apiResponse":{"totalCount":156,"page":1,"pageSize":20,"items":[{"id":"A001","name":"Product A","category":"Electronics","price":99.99,"available":true,"tags":["new","featured"]},{"id":"B002","name":"Product B","category":"Home","price":49.99,"available":false,"tags":["sale"]}],"filters":{"priceRange":"0-500","categories":["Electronics","Home"],"sort":"price_asc"}}',
+        '{"apiResponse":{"totalCount":156,"page":1,"pageSize":20,"items":[{"id":"A001","name":"Product A","category":"Electronics","price":99.99,"available":true,"tags":["new","featured"]},{"id":"B002","name":"Product B","category":"Home","price":49.99,"available":false,"tags":["sale"]}],"filters":{"priceRange":"0-500","categories":["Electronics","Home"],"sort":"price_asc"}}}',
         '{"dashboard":{"stats":{"totalUsers":12500,"activeUsers":8900,"revenue":456000.50,"growthRate":12.5},"charts":[{"type":"line","title":"User Growth","dataPoints":[120,150,180,220,280,350]},{"type":"bar","title":"Revenue","dataPoints":[45000,52000,61000,78000]}],"alerts":[{"level":"warning","message":"Server load high"},{"level":"info","message":"New user milestone"}]}}'
       ],
       xml: [
