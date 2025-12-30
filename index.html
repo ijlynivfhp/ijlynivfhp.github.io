@@ -349,9 +349,15 @@
                 window.localStorage.setItem(key, value);
             } catch (e) {}
 
-            // 2. 异步保存到IndexedDB（持久化）
+            // 2. 异步保存到IndexedDB（持久化），等待初始化完成
             if (this._ready && this._db) {
                 this.setSetting(key, value).catch(() => {});
+            } else {
+                this._init().then(() => {
+                    if (this._db) {
+                        this.setSetting(key, value).catch(() => {});
+                    }
+                }).catch(() => {});
             }
         },
 
@@ -2104,14 +2110,6 @@
     // 输入内容保存函数 - 使用safeStorage（自动处理IndexedDB和localStorage）
     function saveInput(key, value) {
         safeStorage.set(key, value);
-        // 大文本额外保存到tempData（IndexedDB专用）
-        if (value && value.length > 1000) {
-            try {
-                if (safeStorage._ready) {
-                    safeStorage.setTemp(key, value).catch(() => {});
-                }
-            } catch (_) {}
-        }
     }
 
     // 应用历史记录保留策略：7天 + 1000条限制
@@ -3194,30 +3192,8 @@ ${jsonUnescapeLogic.toString()}
             .map(btn => btn.dataset.tab);
         const orderJson = JSON.stringify(order);
 
-        // 同步保存到 localStorage（快速读取）
-        try {
-            localStorage.setItem('nav-order', orderJson);
-        } catch (e) {
-            console.warn('保存导航顺序到 localStorage 失败', e);
-        }
-
-        // 异步保存到 IndexedDB（持久化备份）
-        if (safeStorage._ready && safeStorage._db) {
-            safeStorage.setSetting('nav-order', orderJson).catch(e => {
-                console.warn('保存导航顺序到 IndexedDB 失败', e);
-            });
-        } else {
-            // IndexedDB 未就绪，等待初始化后保存
-            safeStorage._init().then(() => {
-                if (safeStorage._db) {
-                    safeStorage.setSetting('nav-order', orderJson).catch(e => {
-                        console.warn('保存导航顺序到 IndexedDB 失败', e);
-                    });
-                }
-            }).catch(e => {
-                console.warn('IndexedDB 初始化失败', e);
-            });
-        }
+        // 使用 saveSetting 统一保存（和其他设置保持一致）
+        saveSetting('nav-order', orderJson);
     }
 
     // --- DOM 元素引用 ---
