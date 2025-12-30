@@ -15,30 +15,6 @@
         _db: null,
         _ready: false,
         _initPromise: null,
-        _cookieAllow: new Set(),
-        _ck: (key) => 'et_' + key,
-
-        // Cookie fallback methods
-        _getCookie: (name) => {
-            try {
-                const pattern = new RegExp('(?:^|; )' + name.replace(/[-[\]{}()*+?.,\\^$|#\\s]/g, '\\\\$&') + '=([^;]*)');
-                const match = document.cookie.match(pattern);
-                return match ? decodeURIComponent(match[1]) : null;
-            } catch (_) {
-                return null;
-            }
-        },
-        _setCookie: (name, value, maxAgeSeconds) => {
-            try {
-                const maxAge = Number.isFinite(maxAgeSeconds) ? maxAgeSeconds : 31536000;
-                document.cookie = `${name}=${encodeURIComponent(String(value))}; Max-Age=${maxAge}; Path=/; SameSite=Lax`;
-            } catch (_) {}
-        },
-        _delCookie: (name) => {
-            try {
-                document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax`;
-            } catch (_) {}
-        },
 
         // 初始化IndexedDB
         _init: function() {
@@ -120,41 +96,23 @@
         // 回退到localStorage
         _fallback: async function(storeName, mode, operation) {
             if (storeName === 'settings') {
-                // 设置使用cookie备份
                 if (mode === 'readonly') {
-                    // 模拟get操作
                     const mockStore = {
-                        get: (key) => {
-                            const v = window.localStorage.getItem(key);
-                            if (v !== null) return v;
-                            if (this._cookieAllow.has(key)) return this._getCookie(this._ck(key));
-                            return null;
-                        }
+                        get: (key) => window.localStorage.getItem(key) || null
                     };
                     return operation(mockStore);
                 } else if (mode === 'readwrite') {
-                    // 模拟set/delete操作
                     const mockStore = {
                         put: (value) => {
                             try {
                                 window.localStorage.setItem(value.key, value.value);
-                                if (this._cookieAllow.has(value.key)) {
-                                    this._setCookie(this._ck(value.key), value.value);
-                                }
-                            } catch (e) {
-                                
-                            }
+                            } catch (e) {}
                             return { result: value.key };
                         },
                         delete: (key) => {
                             try {
                                 window.localStorage.removeItem(key);
-                            } catch (e) {
-                                
-                            }
-                            if (this._cookieAllow.has(key)) {
-                                this._delCookie(this._ck(key));
-                            }
+                            } catch (e) {}
                             return { result: key };
                         }
                     };
@@ -213,12 +171,6 @@
 
         // 设置相关方法
         async getSetting(key) {
-            if (this._cookieAllow.has(key)) {
-                // 优先从cookie获取（用于关键设置）
-                const cookieVal = this._getCookie(this._ck(key));
-                if (cookieVal !== null) return cookieVal;
-            }
-
             try {
                 const result = await this._operate('settings', 'readonly', (store) => {
                     return new Promise((resolve, reject) => {
@@ -236,12 +188,6 @@
 
         async setSetting(key, value) {
             const data = { key, value };
-
-            // 同时保存到cookie（用于关键设置）
-            if (this._cookieAllow.has(key)) {
-                this._setCookie(this._ck(key), value);
-            }
-
             try {
                 return await this._operate('settings', 'readwrite', (store) => {
                     return new Promise((resolve, reject) => {
@@ -263,10 +209,6 @@
         },
 
         async removeSetting(key) {
-            if (this._cookieAllow.has(key)) {
-                this._delCookie(this._ck(key));
-            }
-
             try {
                 return await this._operate('settings', 'readwrite', (store) => {
                     return new Promise((resolve, reject) => {
@@ -392,171 +334,34 @@
             }
         },
 
-        // 数据迁移方法
-        async migrateFromLocalStorage() {
-            try {
-                await this._waitForReady();
-
-                // 迁移历史记录（应用保留策略）
-                const historyData = window.localStorage.getItem('history');
-                if (historyData) {
-                    try {
-                        const history = JSON.parse(historyData);
-                        // 验证是否为数组
-                        if (!Array.isArray(history)) {
-                            
-                            return;
-                        }
-                        // 应用7天+1000条限制（保留最新的1000条）
-                        const now = Date.now();
-                        const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
-                        const filteredHistory = history
-                            .filter(item => item && item.ts && item.ts >= sevenDaysAgo)
-                            .sort((a, b) => b.ts - a.ts) // 倒序排序，最新的在前
-                            .slice(0, 1000); // 取前1000条（最新的）
-
-                        for (const item of filteredHistory) {
-                            await this.addHistory(item);
-                        }
-                    } catch (parseError) {
-                        
-                        // 清理损坏的数据
-                        window.localStorage.removeItem('history');
-                    }
-                }
-
-                // 迁移设置
-                const settingsToMigrate = ['theme', 'layoutMode', 'navCollapsed', 'indent', 'font', 'fontSize', 'enableHistory', 'nav-order', 'active-tab'];
-                for (const key of settingsToMigrate) {
-                    const value = window.localStorage.getItem(key);
-                    if (value !== null) {
-                        await this.setSetting(key, value);
-                    }
-                }
-
-                // 不删除原数据，作为备份保留
-                return true;
-            } catch (error) {
-                
-                return false;
-            }
-        },
-
         // 兼容旧的safeStorage接口 - 使用IndexedDB作为主存储
         get(key) {
-            // 1. 先尝试从localStorage读取（同步，快速）
-            let value = null;
             try {
-                value = window.localStorage.getItem(key);
+                return window.localStorage.getItem(key);
             } catch (e) {
-                
+                return null;
             }
-
-            // 2. 如果localStorage失败或为空，尝试cookie
-            if (value === null && this._cookieAllow.has(key)) {
-                try {
-                    value = this._getCookie(this._ck(key));
-                    if (value !== null) {
-                        // 恢复到localStorage
-                        try {
-                            window.localStorage.setItem(key, value);
-                        } catch (e) {
-                            // 忽略localStorage恢复失败
-                        }
-                    }
-                } catch (e) {
-                    
-                }
-            }
-
-            // 3. 如果IndexedDB已就绪，异步验证和同步
-            if (this._ready && this._db) {
-                this.getSetting(key).then(idbValue => {
-                    // 如果IndexedDB有数据且与当前值不同，需要同步
-                    if (idbValue !== null && idbValue !== value) {
-                        if (value === null) {
-                            // localStorage没有，但IndexedDB有
-                            // 尝试恢复到localStorage
-                            try {
-                                window.localStorage.setItem(key, idbValue);
-                            } catch (e) {
-                                // 忽略localStorage恢复失败
-                            }
-                        } else {
-                            // 数据不一致，以IndexedDB为准
-                            try {
-                                window.localStorage.setItem(key, idbValue);
-                            } catch (e) {
-                                // 忽略localStorage更新失败
-                            }
-                        }
-                    } else if (value !== null && idbValue === null) {
-                        // localStorage有但IndexedDB没有，同步到IndexedDB
-                        this.setSetting(key, value).catch(() => {});
-                    }
-                }).catch(idbError => {
-                    
-                });
-            }
-
-            return value;
         },
 
         set(key, value) {
-            // 优先保存到IndexedDB，localStorage作为备份
-            let localStorageSuccess = false;
-
-            // 1. 尝试保存到localStorage（快速但容量有限）
+            // 1. 同步保存到localStorage（快速）
             try {
                 window.localStorage.setItem(key, value);
-                localStorageSuccess = true;
-                if (this._cookieAllow.has(key)) {
-                    this._setCookie(this._ck(key), value);
-                }
-            } catch (e) {
-                
-                // localStorage失败，继续尝试IndexedDB
-            }
+            } catch (e) {}
 
-            // 2. 异步保存到IndexedDB（主要存储）
+            // 2. 异步保存到IndexedDB（持久化）
             if (this._ready && this._db) {
-                this.setSetting(key, value).catch(idbError => {
-                    
-                    // 如果IndexedDB也失败，尝试cookie备份
-                    if (this._cookieAllow.has(key)) {
-                        try {
-                            this._setCookie(this._ck(key), value);
-                        } catch (cookieError) {
-                            
-                        }
-                    }
-                });
-            } else if (!localStorageSuccess) {
-                // 如果IndexedDB不可用且localStorage失败，尝试cookie
-                if (this._cookieAllow.has(key)) {
-                    try {
-                        this._setCookie(this._ck(key), value);
-                    } catch (cookieError) {
-                        
-                    }
-                }
+                this.setSetting(key, value).catch(() => {});
             }
         },
 
         remove(key) {
             try {
                 window.localStorage.removeItem(key);
-                if (this._cookieAllow.has(key)) {
-                    this._delCookie(this._ck(key));
-                }
-
-                // 异步从IndexedDB删除
                 if (this._ready && this._db) {
                     this.removeSetting(key).catch(() => {});
                 }
-            } catch (e) {
-                
-            }
+            } catch (e) {}
         }
     };
 
@@ -3077,44 +2882,34 @@ ${jsonUnescapeLogic.toString()}
         const tabList = document.querySelector('.tab-list');
         if (!tabList) return;
 
-        // 调试：列出所有 localStorage 键
-        console.log('[nav-order] localStorage 所有键:', Object.keys(localStorage).filter(k => k.includes('nav')));
-
         // 先用 localStorage 快速恢复，避免页面闪烁
         const localStorageOrder = localStorage.getItem('nav-order');
-        console.log('[nav-order] 加载 - localStorage:', localStorageOrder);
-
         if (localStorageOrder) {
             try {
                 const order = JSON.parse(localStorageOrder);
                 if (Array.isArray(order) && order.length > 0) {
-                    console.log('[nav-order] 从 localStorage 恢复顺序:', order);
                     applyNavOrder(tabList, order);
                 }
             } catch (e) {
-                console.warn('[nav-order] 解析 localStorage 失败', e);
+                console.warn('解析 localStorage 导航顺序失败', e);
             }
         }
 
         // 然后 async 从 IndexedDB 读取最新值（可能覆盖 localStorage 的旧值）
         safeStorage.getSetting('nav-order').then(idbOrder => {
-            console.log('[nav-order] IndexedDB 值:', idbOrder);
             if (idbOrder && idbOrder !== localStorageOrder) {
                 try {
                     const order = JSON.parse(idbOrder);
                     if (Array.isArray(order) && order.length > 0) {
-                        console.log('[nav-order] 从 IndexedDB 恢复顺序:', order);
                         // 同步到 localStorage
                         localStorage.setItem('nav-order', idbOrder);
                         applyNavOrder(tabList, order);
                     }
                 } catch (e) {
-                    console.warn('[nav-order] 从 IndexedDB 恢复失败', e);
+                    console.warn('从 IndexedDB 恢复导航顺序失败', e);
                 }
             }
-        }).catch(e => {
-            console.warn('[nav-order] 从 IndexedDB 读取失败', e);
-        });
+        }).catch(() => {});
 
         function applyNavOrder(tabList, order) {
             const buttonMap = new Map();
@@ -3402,38 +3197,25 @@ ${jsonUnescapeLogic.toString()}
         // 同步保存到 localStorage（快速读取）
         try {
             localStorage.setItem('nav-order', orderJson);
-            console.log('[nav-order] 已保存到 localStorage:', orderJson);
         } catch (e) {
-            console.warn('[nav-order] 保存到 localStorage 失败', e);
+            console.warn('保存导航顺序到 localStorage 失败', e);
         }
 
-        // 验证保存是否成功
-        const saved = localStorage.getItem('nav-order');
-        console.log('[nav-order] 验证 localStorage:', saved === orderJson ? '✓ 成功' : '✗ 失败', saved);
-
         // 异步保存到 IndexedDB（持久化备份）
-        console.log('[nav-order] IndexedDB 状态:', { _ready: safeStorage._ready, _db: !!safeStorage._db });
-
         if (safeStorage._ready && safeStorage._db) {
-            safeStorage.setSetting('nav-order', orderJson).then(() => {
-                console.log('[nav-order] ✓ 已保存到 IndexedDB');
-            }).catch(e => {
-                console.warn('[nav-order] 保存到 IndexedDB 失败', e);
+            safeStorage.setSetting('nav-order', orderJson).catch(e => {
+                console.warn('保存导航顺序到 IndexedDB 失败', e);
             });
         } else {
-            console.log('[nav-order] IndexedDB 未就绪，等待初始化...');
             // IndexedDB 未就绪，等待初始化后保存
             safeStorage._init().then(() => {
-                console.log('[nav-order] IndexedDB 初始化完成:', { _ready: safeStorage._ready, _db: !!safeStorage._db });
                 if (safeStorage._db) {
-                    safeStorage.setSetting('nav-order', orderJson).then(() => {
-                        console.log('[nav-order] ✓ 已保存到 IndexedDB (延迟)');
-                    }).catch(e => {
-                        console.warn('[nav-order] 保存到 IndexedDB 失败', e);
+                    safeStorage.setSetting('nav-order', orderJson).catch(e => {
+                        console.warn('保存导航顺序到 IndexedDB 失败', e);
                     });
                 }
             }).catch(e => {
-                console.warn('[nav-order] IndexedDB 初始化失败', e);
+                console.warn('IndexedDB 初始化失败', e);
             });
         }
     }
@@ -3570,11 +3352,11 @@ ${jsonUnescapeLogic.toString()}
                 localStorage.clear();
                 cleared = true;
             } catch (e) {}
-            // 清理cookies
-            try {
-                safeStorage._cookieAllow.forEach((k) => safeStorage._delCookie(safeStorage._ck(k)));
-                cleared = true;
-            } catch (e) {}
+            // 清理cookies（不再使用）
+            // try {
+            //     safeStorage._cookieAllow.forEach((k) => safeStorage._delCookie(safeStorage._ck(k)));
+            //     cleared = true;
+            // } catch (e) {}
             if (!cleared) return showToast('清除失败');
             showToast('数据已清除，即将刷新...');
             setTimeout(() => location.reload(), 1000);
