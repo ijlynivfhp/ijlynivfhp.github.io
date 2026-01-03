@@ -1304,12 +1304,12 @@
           <div class="toolbar">
              <h2>计算结果</h2>
              <div class="hint-row">
-                 <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.9rem; font-weight:bold; color:var(--accent); cursor:pointer; margin-right:0.5rem; padding: 2px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-2);">
+                 <label style="display: flex; align-items: center; cursor: pointer;">
                     <input type="checkbox" id="crypto-uppercase"> 大写输出
                  </label>
              </div>
           </div>
-          <div style="display:flex; flex-direction:column; gap:0.5rem; overflow-y:auto; padding:0.5rem;">
+          <div style="display:flex; flex-direction:column; gap:0.5rem; flex:1; min-height:0; overflow-y:auto; padding:0.5rem;">
              <div class="form-group">
                 <label>Result</label>
                 <div class="input-group">
@@ -1560,6 +1560,9 @@
               </label>
               <label style="display: flex; align-items: center; cursor: pointer;">
                 <input type="checkbox" id="uuid-upper"> 大写输出 (UPPER)
+              </label>
+              <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="uuid-sequential"> 顺序生成 (Sequential)
               </label>
           </div>
           <div class="actions" style="display:none;"></div>
@@ -4617,7 +4620,7 @@ ${jsonUnescapeLogic.toString()}
 
     function renderJsonTree(container, data) {
       container.innerHTML = '';
-      container.appendChild(createJsonNode(data, null, false));
+      container.appendChild(createJsonNode(data, null, true));
 
       // 如果搜索栏可见且有搜索词，自动重新搜索
       const searchBar = document.getElementById('json-search-bar');
@@ -7610,17 +7613,20 @@ server.listen(PORT, () => {
         const uuidCountInput = document.getElementById('uuid-count');
         const uuidNoHyphenInput = document.getElementById('uuid-no-hyphen');
         const uuidUpperInput = document.getElementById('uuid-upper');
+        const uuidSequentialInput = document.getElementById('uuid-sequential');
         if (uuidCountInput) {
             uuidCountInput.value = safeStorage.get('uuid-count') || '10';
             uuidCountInput.oninput = () => safeStorage.set('uuid-count', uuidCountInput.value);
         }
         if (uuidNoHyphenInput) uuidNoHyphenInput.checked = safeStorage.get('uuid-no-hyphen') === 'true';
         if (uuidUpperInput) uuidUpperInput.checked = safeStorage.get('uuid-upper') === 'true';
+        if (uuidSequentialInput) uuidSequentialInput.checked = safeStorage.get('uuid-sequential') === 'true';
 
         function genUUIDs() {
             const count = parseInt(uuidCountInput.value) || 10;
             const noHyphen = uuidNoHyphenInput.checked;
             const isUpper = uuidUpperInput.checked;
+            const isSequential = uuidSequentialInput.checked;
             const output = document.getElementById('uuid-output');
             let results = [];
 
@@ -7628,10 +7634,31 @@ server.listen(PORT, () => {
             safeStorage.set('uuid-count', uuidCountInput.value);
             safeStorage.set('uuid-no-hyphen', uuidNoHyphenInput.checked);
             safeStorage.set('uuid-upper', uuidUpperInput.checked);
+            safeStorage.set('uuid-sequential', uuidSequentialInput.checked);
+
+            let baseTs = Date.now();
 
             for (let i = 0; i < count; i++) {
                 let uuid = '';
-                if (typeof crypto.randomUUID === 'function') {
+                if (isSequential) {
+                    // Sequential UUID (Time-basedish): Time(12hex) + Random(20hex)
+                    // Structure: 8-4-4-4-12
+                    // We use the first 12 hex digits for timestamp
+                    let ts = baseTs + i;
+                    let tsHex = ts.toString(16).padStart(12, '0');
+                    let part1 = tsHex.substring(0, 8);
+                    let part2 = tsHex.substring(8, 12);
+                    // Use standard random for the rest, keeping version 4 logic or just random
+                    // Standard v4: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+                    // We replace the first two blocks.
+                    // To keep it looking like a UUID, we can still use the 4xxx and yxxx parts for the rest
+                    let rest = '4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                        const r = Math.random() * 16 | 0;
+                        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                        return v.toString(16);
+                    });
+                    uuid = `${part1}-${part2}-${rest}`;
+                } else if (typeof crypto.randomUUID === 'function') {
                     uuid = crypto.randomUUID();
                 } else {
                     // Fallback for older browsers
@@ -7685,10 +7712,12 @@ server.listen(PORT, () => {
              document.getElementById('uuid-count').value = '10';
              document.getElementById('uuid-no-hyphen').checked = false;
              document.getElementById('uuid-upper').checked = false;
+             document.getElementById('uuid-sequential').checked = false;
              document.getElementById('uuid-output').value = '';
              safeStorage.remove('uuid-count');
              safeStorage.remove('uuid-no-hyphen');
              safeStorage.remove('uuid-upper');
+             safeStorage.remove('uuid-sequential');
              showToast('已重置');
         };
 
